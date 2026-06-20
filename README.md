@@ -1,7 +1,7 @@
-# Silence Remover Video Editor 
-  
-  
-A simple web app that removes silent sections from videos using MoviePy and pydub.  
+# Silence Remover
+
+
+A simple web app that removes silent sections from videos and audio files using MoviePy and pydub.  
   
 ## Quick Start  
   
@@ -43,8 +43,8 @@ npm run dev
 backend/  
   main.py        - FastAPI server and API endpoints  
   processor.py   - MoviePy + pydub silence detection and removal  
-  uploads/       - uploaded videos  
-  outputs/       - processed videos  
+  uploads/       - uploaded videos and audio  
+  outputs/       - processed videos and audio  
   
 frontend/  
   src/App.jsx    - main React component  
@@ -57,24 +57,28 @@ requirements.txt - Python dependencies
 README.md       - this file  
   
   
-## API Endpoints  
-  
-- POST /upload - upload a video, returns video_id  
-- GET  /original/VIDEO_ID - stream the original video  
-- POST /analyze/VIDEO_ID - detect speech segments, returns duration and segments  
-- POST /process/VIDEO_ID - remove silence, returns output URL  
-- GET  /download/VIDEO_ID - download processed video  
-  
-## How It Works  
-  
-The same algorithm from your original script:  
-  
-1. Upload a video file (mp4, mov, avi, mkv).  
-2. Backend extracts the audio using MoviePy.  
-3. pydub.detect_nonsilent finds the speech regions.  
-4. A 50ms buffer is added around each cut to smooth transitions.  
-5. MoviePy concatenates the non-silent video segments.  
-6. The final video is encoded with libx264 + aac audio.  
+## API Endpoints
+
+- POST /upload - upload a video or audio file, returns video_id
+- GET  /original/VIDEO_ID - stream the original file
+- POST /analyze/VIDEO_ID - detect speech segments, returns duration and segments
+- POST /process/VIDEO_ID - remove silence, returns output URL
+- GET  /download/VIDEO_ID - download processed file
+
+## Supported Formats
+
+**Video:** mp4, mov, avi, mkv
+**Audio:** mp3, wav, flac, aac, ogg, wma, m4a, opus
+
+## How It Works
+
+1. Upload a video or audio file.
+2. Backend extracts/loads the audio using MoviePy (video) or pydub (audio).
+3. pydub.detect_nonsilent finds the speech regions.
+4. A 50ms buffer is added around each cut to smooth transitions.
+5. For video: MoviePy concatenates the non-silent video segments.
+   For audio: pydub concatenates the non-silent audio segments.
+6. The final file is encoded (libx264+aac for video, mp3/wav for audio).
   
 ## Configuration  
   
