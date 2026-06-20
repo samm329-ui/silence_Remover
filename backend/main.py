@@ -6,7 +6,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware  
 from fastapi.responses import FileResponse, JSONResponse  
   
-from processor import detect_speech_segments, remove_silence_from_video  
+from processor import detect_speech_segments, remove_silence_from_video, remove_silence_from_audio, AUDIO_EXTS, VIDEO_EXTS  
   
 BASE_DIR = Path(__file__).resolve().parent  
 UPLOAD_DIR = BASE_DIR / 'uploads'  
@@ -14,7 +14,7 @@ OUTPUT_DIR = BASE_DIR / 'outputs'
 UPLOAD_DIR.mkdir(exist_ok=True)  
 OUTPUT_DIR.mkdir(exist_ok=True)  
   
-ALLOWED_EXT = {'.mp4', '.mov', '.avi', '.mkv'}  
+ALLOWED_EXT = VIDEO_EXTS | AUDIO_EXTS  
 CHUNK_SIZE = 1024 * 1024   
   
 app = FastAPI(title='Silence Remover API')  
@@ -41,7 +41,7 @@ def root():
 @app.post('/upload')  
 async def upload_video(file: UploadFile = File(...)):  
     if _ext(file.filename or '') not in ALLOWED_EXT:  
-        raise HTTPException(status_code=400, detail='Unsupported file type. Use mp4, mov, avi, mkv.')  
+        raise HTTPException(status_code=400, detail='Unsupported file type. Use mp4, mov, avi, mkv, mp3, wav, flac, aac, ogg, wma, m4a, or opus.')  
   
     video_id = uuid.uuid4().hex[:12]  
     ext = _ext(file.filename or '.mp4')  
@@ -83,28 +83,58 @@ def analyze_video(video_id: str):
         raise HTTPException(status_code=500, detail=f'Analysis failed: {e}')  
     return {'video_id': video_id, 'duration': duration, 'segments': segments}  
   
-@app.post('/process/{video_id}')  
-def process_video(video_id: str):  
-    path = _find_upload(video_id)  
-    output_path = OUTPUT_DIR / f'{video_id}.mp4'  
-    if output_path.exists():  
-        output_path.unlink()  
-    try:  
-        remove_silence_from_video(str(path), str(output_path))  
-    except ValueError as e:  
-        raise HTTPException(status_code=400, detail=str(e))  
-    except Exception as e:  
-        raise HTTPException(status_code=500, detail=f'Processing failed: {e}')  
-    if not output_path.exists():  
-        raise HTTPException(status_code=500, detail='Processing failed: output file not produced.')  
+@app.post('/process/{video_id}')
+def process_video(video_id: str):
+    path = _find_upload(video_id)
+    ext = os.path.splitext(path.name)[1].lower()
+    is_audio = ext in AUDIO_EXTS
+
+    if is_audio:
+        output_ext = ext if ext in {'.mp3', '.wav', '.ogg', '.flac'} else '.mp3'
+        output_path = OUTPUT_DIR / f'{video_id}{output_ext}'
+    else:
+        output_path = OUTPUT_DIR / f'{video_id}.mp4'
+
+    if output_path.exists():
+        output_path.unlink()
+    try:
+        if is_audio:
+            remove_silence_from_audio(str(path), str(output_path))
+        else:
+            remove_silence_from_video(str(path), str(output_path))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Processing failed: {e}')
+    if not output_path.exists():
+        raise HTTPException(status_code=500, detail='Processing failed: output file not produced.')
     return {'status': 'completed', 'video_id': video_id, 'output_url': f'/download/{video_id}'}  
   
-@app.get('/download/{video_id}')  
-def download_video(video_id: str):  
-    output_path = OUTPUT_DIR / f'{video_id}.mp4'  
-    if not output_path.exists():  
-        raise HTTPException(status_code=404, detail='Processed video not found. Run /process first.')  
-    return FileResponse(path=output_path, filename=f'silence_removed_{video_id}.mp4', media_type='video/mp4')  
+MIME_MAP = {
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg',
+    '.wma': 'audio/x-ms-wma',
+    '.m4a': 'audio/mp4',
+    '.opus': 'audio/opus',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.mkv': 'video/x-matroska',
+}
+
+
+@app.get('/download/{video_id}')
+def download_video(video_id: str):
+    for ext in ALLOWED_EXT:
+        candidate = OUTPUT_DIR / f'{video_id}{ext}'
+        if candidate.exists():
+            mime = MIME_MAP.get(ext, 'application/octet-stream')
+            label = 'audio' if ext in AUDIO_EXTS else 'video'
+            return FileResponse(path=candidate, filename=f'silence_removed_{video_id}{ext}', media_type=mime)
+    raise HTTPException(status_code=404, detail='Processed file not found. Run /process first.')  
   
 if __name__ == '__main__':  
     import uvicorn  
